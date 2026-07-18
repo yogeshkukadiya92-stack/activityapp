@@ -159,7 +159,7 @@ db.prepare("UPDATE activities SET options=?,settings=? WHERE lower(title)='daily
 const parseJson=(value,fallback)=>{try{return JSON.parse(value)}catch{return fallback}};
 const hydrateActivity=row=>row?({...row,options:Array.isArray(row.options)?row.options:parseJson(row.options,[]),settings:row.settings&&typeof row.settings==='object'?row.settings:parseJson(row.settings,{})}):row;
 const cleanMediaUrl=value=>{const url=String(value||'').trim().slice(0,500);return /^(https:\/\/|\/(?!\/))/.test(url)?url:''};
-const activityPayload=input=>({options:(Array.isArray(input.options)?input.options:[]).map(value=>String(value).trim().slice(0,120)).filter(Boolean).slice(0,12),settings:{allowMultiple:input.settings?.allowMultiple===undefined?String(input.type)==='Multiple Answers':Boolean(input.settings.allowMultiple),showResults:input.settings?.showResults!==false,anonymous:Boolean(input.settings?.anonymous),correctOption:Number.isInteger(Number(input.settings?.correctOption))?Math.max(0,Math.min(11,Number(input.settings.correctOption))):null,min:String(input.type)==='Number Count'?Math.max(-1000000000,Math.min(1000000000,Number(input.settings?.min)||0)):Math.max(0,Number(input.settings?.min)||0),max:String(input.type)==='Number Count'?Math.max(1,Math.min(1000000000,Number(input.settings?.max)||1000000)):Math.max(1,Math.min(100,Number(input.settings?.max)||10)),leftLabel:String(input.settings?.leftLabel||'Not at all').trim().slice(0,40),rightLabel:String(input.settings?.rightLabel||'Absolutely').trim().slice(0,40),imageUrl:cleanMediaUrl(input.settings?.imageUrl),optionImages:(Array.isArray(input.settings?.optionImages)?input.settings.optionImages:[]).map(cleanMediaUrl).slice(0,12),followUps:(Array.isArray(input.settings?.followUps)?input.settings.followUps:[]).map(value=>String(value||'').trim().slice(0,180)).slice(0,12)}});
+const activityPayload=input=>({options:(Array.isArray(input.options)?input.options:[]).map(value=>String(value).trim().slice(0,120)).filter(Boolean).slice(0,12),settings:{allowMultiple:input.settings?.allowMultiple===undefined?String(input.type)==='Multiple Answers':Boolean(input.settings.allowMultiple),showResults:input.settings?.showResults!==false,anonymous:Boolean(input.settings?.anonymous),correctOption:Number.isInteger(Number(input.settings?.correctOption))?Math.max(0,Math.min(11,Number(input.settings.correctOption))):null,min:String(input.type)==='Number Count'?Math.max(-1000000000,Math.min(1000000000,Number(input.settings?.min)||0)):Math.max(0,Number(input.settings?.min)||0),max:String(input.type)==='Number Count'?Math.max(1,Math.min(1000000000,Number(input.settings?.max)||1000000)):Math.max(1,Math.min(100,Number(input.settings?.max)||10)),leftLabel:String(input.settings?.leftLabel||'Not at all').trim().slice(0,40),rightLabel:String(input.settings?.rightLabel||'Absolutely').trim().slice(0,40),imageUrl:cleanMediaUrl(input.settings?.imageUrl),optionImages:(Array.isArray(input.settings?.optionImages)?input.settings.optionImages:[]).map(cleanMediaUrl).slice(0,12),followUps:(Array.isArray(input.settings?.followUps)?input.settings.followUps:[]).map(value=>String(value||'').trim().slice(0,180)).slice(0,12),followUpTypes:(Array.isArray(input.settings?.followUpTypes)?input.settings.followUpTypes:[]).map(value=>value==='number'?'number':'short').slice(0,12)}});
 
 const hashPassword = (password, salt=randomBytes(16).toString('hex')) => `${salt}:${scryptSync(password,salt,64).toString('hex')}`;
 const verifyPassword = (password, stored) => {
@@ -413,12 +413,17 @@ export function addResponse(joinCode, input) {
   const participant = db.prepare('SELECT id FROM participants WHERE id=? AND session_id=?').get(input.participantId,session.id);
   if (!participant) return null;
   const activityId = Number(input.activityId || session.currentActivityId);
-  const activity = db.prepare('SELECT id,type,settings FROM activities WHERE id=? AND workshop_id=(SELECT workshop_id FROM live_sessions WHERE id=?)').get(activityId,session.id);
+  const activity = db.prepare('SELECT id,type,options,settings FROM activities WHERE id=? AND workshop_id=(SELECT workshop_id FROM live_sessions WHERE id=?)').get(activityId,session.id);
   const answer = String(input.answer || '').trim().slice(0,500);
   if (!activity || !answer) return null;
   if (activity.type === 'Number Count') {
     const value = Number(answer), settings = parseJson(activity.settings,{}), min = Number(settings.min ?? 0), max = Number(settings.max ?? 1000000);
     if (!Number.isFinite(value) || value < min || value > max) return null;
+  }
+  if (activity.type === 'Conditional Poll') {
+    let parsed; try { parsed=JSON.parse(answer); } catch { return null; }
+    const options=parseJson(activity.options,[]), settings=parseJson(activity.settings,{}), index=options.indexOf(String(parsed?.choice||'')), followUp=String(parsed?.followUp||'').trim(), question=String(settings.followUps?.[index]||'').trim(), type=settings.followUpTypes?.[index]==='number'?'number':'short';
+    if(index<0||(question&&!followUp)||(question&&type==='number'&&!Number.isFinite(Number(followUp))))return null;
   }
   const response = { id: randomUUID(), sessionId: session.id, activityId, participantId: participant.id, answer };
   db.prepare('INSERT INTO responses (id,session_id,activity_id,participant_id,answer) VALUES (?,?,?,?,?)')

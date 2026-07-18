@@ -105,13 +105,13 @@ const advancedActivities=[
   {title:'Forecast',type:'Prediction Game',question:'What happens next?',options:['Grow','Hold','Drop'],settings:{correctOption:1}},
   {title:'Promise',type:'Commitment Wall',question:'What will you commit to?'},
   {title:'Group total',type:'Number Count',question:'How many minutes did you exercise?',settings:{min:0,max:1000000}},
-  {title:'Branching pulse',type:'Conditional Poll',question:'Would you recommend this workshop?',options:['Yes','No'],settings:{followUps:['What helped you most?','What should we improve?']}},
+  {title:'Branching pulse',type:'Conditional Poll',question:'Would you recommend this workshop?',options:['Yes','No'],settings:{followUps:['How many sessions would you attend?','What should we improve?'],followUpTypes:['number','short']}},
 ];
 const advancedWorkshop=await request('/api/workshops',{method:'POST',headers:auth,body:{title:`Advanced activities ${unique}`,activities:advancedActivities}});
 assert(advancedWorkshop.status===201&&advancedWorkshop.body.workshop.activities.length===9,'Advanced activity creation failed');
 const advancedSaved=advancedWorkshop.body.workshop.activities;
 assert(advancedSaved.map(item=>item.type).join('|')===advancedActivities.map(item=>item.type).join('|'),'Advanced activity types were not persisted');
-assert(advancedSaved[0].settings.optionImages[0].startsWith('https://')&&advancedSaved[0].settings.optionImages[1]===''&&advancedSaved[1].settings.max===7&&advancedSaved[1].settings.rightLabel==='Confident'&&advancedSaved[4].settings.imageUrl.startsWith('https://')&&advancedSaved[5].settings.correctOption===1&&advancedSaved[7].settings.min===0&&advancedSaved[7].settings.max===1000000&&advancedSaved[8].settings.followUps[0]==='What helped you most?'&&advancedSaved[8].settings.followUps[1]==='What should we improve?','Advanced activity settings validation failed');
+assert(advancedSaved[0].settings.optionImages[0].startsWith('https://')&&advancedSaved[0].settings.optionImages[1]===''&&advancedSaved[1].settings.max===7&&advancedSaved[1].settings.rightLabel==='Confident'&&advancedSaved[4].settings.imageUrl.startsWith('https://')&&advancedSaved[5].settings.correctOption===1&&advancedSaved[7].settings.min===0&&advancedSaved[7].settings.max===1000000&&advancedSaved[8].settings.followUps[0]==='How many sessions would you attend?'&&advancedSaved[8].settings.followUps[1]==='What should we improve?'&&advancedSaved[8].settings.followUpTypes[0]==='number'&&advancedSaved[8].settings.followUpTypes[1]==='short','Advanced activity settings validation failed');
 const numberControlled=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/control`,{method:'POST',headers:auth,body:{currentActivityId:advancedSaved[7].id}});
 assert(numberControlled.status===200,'Number total activity selection failed');
 const numberParticipant=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/join`,{method:'POST',body:{name:'Number QA'}});
@@ -122,9 +122,14 @@ assert(invalidNumberResponse.status===422,'Number total accepted a non-numeric r
 const conditionalControlled=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/control`,{method:'POST',headers:auth,body:{currentActivityId:advancedSaved[8].id}});
 assert(conditionalControlled.status===200,'Conditional activity selection failed');
 const conditionalParticipant=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/join`,{method:'POST',body:{name:'Branch QA'}});
-const conditionalAnswer=JSON.stringify({choice:'Yes',followUp:'The practical examples helped me most.'});
+const conditionalAnswer=JSON.stringify({choice:'Yes',followUp:'42.5'});
 const conditionalResponse=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/responses`,{method:'POST',body:{participantId:conditionalParticipant.body.participant.id,activityId:advancedSaved[8].id,answer:conditionalAnswer}});
 assert(conditionalResponse.status===201&&conditionalResponse.body.response.answer===conditionalAnswer,'Conditional poll response persistence failed');
+const invalidConditionalNumber=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/responses`,{method:'POST',body:{participantId:conditionalParticipant.body.participant.id,activityId:advancedSaved[8].id,answer:JSON.stringify({choice:'Yes',followUp:'not-a-number'})}});
+assert(invalidConditionalNumber.status===422,'Conditional number follow-up accepted a non-numeric response');
+const conditionalShortAnswer=JSON.stringify({choice:'No',followUp:'Add more practice time.'});
+const conditionalShortResponse=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/responses`,{method:'POST',body:{participantId:conditionalParticipant.body.participant.id,activityId:advancedSaved[8].id,answer:conditionalShortAnswer}});
+assert(conditionalShortResponse.status===201&&conditionalShortResponse.body.response.answer===conditionalShortAnswer,'Conditional short-answer follow-up persistence failed');
 const removedAdvancedWorkshop=await request(`/api/workshops/${advancedWorkshop.body.workshop.id}`,{method:'DELETE',headers:auth});
 assert(removedAdvancedWorkshop.status===200,'Advanced activity cleanup failed');
 
