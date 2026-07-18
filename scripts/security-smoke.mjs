@@ -96,6 +96,23 @@ assert(removedActivity.status===200 && removedActivity.body.workshop.activities.
 const removedWorkshop=await request(`/api/workshops/${smokeWorkshop.id}`,{method:'DELETE',headers:auth});
 assert(removedWorkshop.status===200,'Workshop deletion failed');
 
+const advancedActivities=[
+  {title:'Visual vote',type:'Image Choice Poll',question:'Which image fits best?',options:['Sunrise','Mountain'],settings:{optionImages:['https://images.example.com/sunrise.jpg','javascript:alert(1)']}},
+  {title:'Confidence',type:'Opinion Scale',question:'How confident are you?',settings:{min:1,max:7,leftLabel:'Unsure',rightLabel:'Confident'}},
+  {title:'Ideas',type:'Idea Board',question:'What should we try next?'},
+  {title:'Sequence',type:'Arrange the Steps',question:'Put these steps in order.',options:['Plan','Practice','Reflect']},
+  {title:'Find it',type:'Hotspot Challenge',question:'Where is the target?',settings:{imageUrl:'https://images.example.com/map.jpg'}},
+  {title:'Forecast',type:'Prediction Game',question:'What happens next?',options:['Grow','Hold','Drop'],settings:{correctOption:1}},
+  {title:'Promise',type:'Commitment Wall',question:'What will you commit to?'},
+];
+const advancedWorkshop=await request('/api/workshops',{method:'POST',headers:auth,body:{title:`Advanced activities ${unique}`,activities:advancedActivities}});
+assert(advancedWorkshop.status===201&&advancedWorkshop.body.workshop.activities.length===7,'Advanced activity creation failed');
+const advancedSaved=advancedWorkshop.body.workshop.activities;
+assert(advancedSaved.map(item=>item.type).join('|')===advancedActivities.map(item=>item.type).join('|'),'Advanced activity types were not persisted');
+assert(advancedSaved[0].settings.optionImages[0].startsWith('https://')&&advancedSaved[0].settings.optionImages[1]===''&&advancedSaved[1].settings.max===7&&advancedSaved[1].settings.rightLabel==='Confident'&&advancedSaved[4].settings.imageUrl.startsWith('https://')&&advancedSaved[5].settings.correctOption===1,'Advanced activity settings validation failed');
+const removedAdvancedWorkshop=await request(`/api/workshops/${advancedWorkshop.body.workshop.id}`,{method:'DELETE',headers:auth});
+assert(removedAdvancedWorkshop.status===200,'Advanced activity cleanup failed');
+
 const controlled=await request('/api/sessions/27RJ27/control',{method:'POST',headers:auth,body:{status:'paused'}});
 assert(controlled.status===200,'Authenticated presenter control failed');
 
@@ -110,4 +127,4 @@ assert(moderated.status===200,'Moderation failed');
 const current=await request('/api/sessions/27RJ27');
 assert(!current.body.responses.some(item=>item.id===responseId),'Hidden response remained public');
 
-console.log('Security smoke test passed: auth, workspace owner safeguards, member create/login/disable/delete RBAC, home dashboard, reports/CSV export, audience/groups/invites, templates/custom/use, configured activity CRUD, workshop response isolation, protected control, response moderation.');
+console.log('Security smoke test passed: auth, workspace owner safeguards, member create/login/disable/delete RBAC, home dashboard, reports/CSV export, audience/groups/invites, templates/custom/use, configured and advanced activity persistence, workshop response isolation, protected control, response moderation.');
