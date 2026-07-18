@@ -411,6 +411,25 @@ input::placeholder,textarea::placeholder{color:#98a2b3}
   .login-card h1{font-size:29px}
 }
 
+/* Production interaction states */
+.side-assurance{min-height:40px;display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--muted);font-size:11px;font-weight:700}
+.side-assurance svg{color:var(--lime-dark)}
+.mini-qr{display:block;object-fit:contain;padding:2px;border-radius:5px}
+.mini-qr.qr-loading{background:linear-gradient(90deg,#f1f4f5 25%,#fff 50%,#f1f4f5 75%);background-size:200% 100%;animation:qrLoad 1.2s linear infinite}
+@keyframes qrLoad{to{background-position:-200% 0}}
+.poll-preview>div{height:68px;border:1px solid var(--line);border-radius:14px;background:white;position:relative;overflow:hidden;text-align:left;padding:0 20px;font-weight:600;display:flex;align-items:center}
+.poll-preview>div b{transition:width .3s ease}
+.moderation .moderation-status{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--muted);font-size:10px;text-align:center}
+.moderation .moderation-status svg{width:42px;height:42px;padding:9px;border:1px solid var(--line);border-radius:9px;color:var(--navy)}
+.moderation .moderation-status small{font-size:10px;color:var(--lime-dark)}
+.result-empty{position:absolute;inset:0;display:grid;place-items:center;margin:0;color:var(--muted);font-size:14px;font-weight:600;text-align:center}
+.template-rail .browse-templates{width:100%;display:flex;justify-content:space-between;align-items:center;border:0;border-top:1px solid var(--line);padding:18px 4px 0;background:transparent;color:var(--blue);font-size:12px}
+.studio-participant.desktop .studio-phone{width:min(100%,500px);border-radius:16px}
+.studio-phone>button:disabled{opacity:.62;cursor:not-allowed}
+.fatal-error{min-height:100vh;display:grid;place-items:center;align-content:center;gap:12px;padding:24px;text-align:center;background:var(--bg)}
+.fatal-error h1{margin:20px 0 0;font-size:32px}.fatal-error p{margin:0;color:var(--muted)}
+.fatal-error button{height:48px;margin-top:12px;padding:0 22px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-weight:700}
+
 @media(max-width:560px){
   :is(.app-shell,.home-shell,.manager-shell,.reports-shell,.audience-shell,.templates-shell,.studio-shell,.workspace-shell){padding-inline:6px}
   :is(.app-shell,.home-shell,.manager-shell,.reports-shell,.audience-shell,.templates-shell,.studio-shell,.workspace-shell)>.side-nav{left:6px;right:6px;bottom:6px}

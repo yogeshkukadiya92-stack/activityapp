@@ -247,11 +247,12 @@ const makeJoinCode = () => {
 export function listWorkshops(){
   return db.prepare(`
     SELECT w.id,w.title,w.join_code joinCode,w.created_at createdAt,s.status,s.updated_at updatedAt,
-      COUNT(DISTINCT a.id) activityCount,COUNT(DISTINCT p.id) participantCount
+      COUNT(DISTINCT a.id) activityCount,COUNT(DISTINCT p.id) participantCount,COUNT(DISTINCT r.id) responseCount
     FROM workshops w
     JOIN live_sessions s ON s.workshop_id=w.id
     LEFT JOIN activities a ON a.workshop_id=w.id
     LEFT JOIN participants p ON p.session_id=s.id
+    LEFT JOIN responses r ON r.session_id=s.id
     GROUP BY w.id,s.id ORDER BY s.updated_at DESC
   `).all();
 }
@@ -411,8 +412,9 @@ export function addResponse(joinCode, input) {
   const participant = db.prepare('SELECT id FROM participants WHERE id=? AND session_id=?').get(input.participantId,session.id);
   if (!participant) return null;
   const activityId = Number(input.activityId || session.currentActivityId);
+  const activity = db.prepare('SELECT id FROM activities WHERE id=? AND workshop_id=(SELECT workshop_id FROM live_sessions WHERE id=?)').get(activityId,session.id);
   const answer = String(input.answer || '').trim().slice(0,280);
-  if (!answer) return null;
+  if (!activity || !answer) return null;
   const response = { id: randomUUID(), sessionId: session.id, activityId, participantId: participant.id, answer };
   db.prepare('INSERT INTO responses (id,session_id,activity_id,participant_id,answer) VALUES (?,?,?,?,?)')
     .run(response.id,response.sessionId,response.activityId,response.participantId,response.answer);

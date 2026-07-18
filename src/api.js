@@ -20,13 +20,14 @@ export async function api(path, options={}) {
   return data;
 }
 
-export function useLiveSession(code='27RJ27') {
+export function useLiveSession(code='', enabled=true) {
   const [session,setSession]=useState(null);
   const [connection,setConnection]=useState('connecting');
   const [error,setError]=useState('');
   const wsRef=useRef(null);
 
   useEffect(()=>{
+    if(!enabled||!code){setSession(null);setConnection('idle');setError('');return}
     let active=true, reconnect;
     api(`/api/sessions/${code}`).then(data=>active&&setSession(data)).catch(err=>active&&setError(err.message));
     const connect=()=>{
@@ -39,11 +40,12 @@ export function useLiveSession(code='27RJ27') {
     };
     connect();
     return()=>{active=false;clearTimeout(reconnect);wsRef.current?.close()};
-  },[code]);
+  },[code,enabled]);
 
   const control=useCallback(async patch=>{
+    if(!enabled||!code)throw new Error('Live session is not connected');
     const next=await api(`/api/sessions/${code}/control`,{method:'POST',body:patch,auth:true});
     setSession(next); return next;
-  },[code]);
+  },[code,enabled]);
   return {session,connection,error,control};
 }

@@ -13,7 +13,13 @@ const clients=new Map();
 const allowedOrigins=new Set(String(process.env.PUBLIC_ORIGIN||'http://localhost:5173,http://localhost:8787').split(',').map(value=>value.trim()).filter(Boolean));
 
 const corsOrigin=req=>{const origin=req.headers.origin;if(!origin)return production?'null':'*';return allowedOrigins.has(origin)?origin:'null'};
-const json=(req,res,status,body)=>{res.writeHead(status,{'content-type':'application/json','access-control-allow-origin':corsOrigin(req),'vary':'Origin','access-control-allow-headers':'content-type,authorization','access-control-allow-methods':'GET,POST,PATCH,DELETE,OPTIONS','x-content-type-options':'nosniff','referrer-policy':'same-origin'});res.end(JSON.stringify(body))};
+const securityHeaders={
+  'x-content-type-options':'nosniff','referrer-policy':'same-origin','x-frame-options':'DENY',
+  'permissions-policy':'camera=(), microphone=(), geolocation=(), payment=()',
+  'cross-origin-opener-policy':'same-origin',
+  ...(production?{'strict-transport-security':'max-age=31536000; includeSubDomains'}:{}),
+};
+const json=(req,res,status,body)=>{res.writeHead(status,{'content-type':'application/json','access-control-allow-origin':corsOrigin(req),'vary':'Origin','access-control-allow-headers':'content-type,authorization','access-control-allow-methods':'GET,POST,PATCH,DELETE,OPTIONS',...securityHeaders});res.end(JSON.stringify(body))};
 const clientIp=req=>process.env.TRUST_PROXY==='true'?String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim():String(req.socket.remoteAddress||'unknown');
 const bearer=req=>String(req.headers.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1]||'';
 const requirePresenter=async(req,res)=>{const user=await getAuthUser(bearer(req));if(!user){json(req,res,401,{error:'Presenter authentication required'});return null}if(!['admin','presenter'].includes(user.role)){json(req,res,403,{error:'Insufficient permission'});return null}return user};
@@ -154,7 +160,7 @@ const server=http.createServer(async(req,res)=>{
       const distRoot=resolve('dist');let filePath=resolve(distRoot,url.pathname==='/'?'index.html':url.pathname.slice(1));
       if(!filePath.startsWith(`${distRoot}${sep}`)&&filePath!==distRoot)return json(req,res,403,{error:'Forbidden'});
       try{if(!(await stat(filePath)).isFile())throw new Error()}catch{filePath=resolve(distRoot,'index.html')}
-      try{const data=await readFile(filePath);const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'content-type':types[extname(filePath)]||'application/octet-stream','x-content-type-options':'nosniff','referrer-policy':'same-origin','content-security-policy':"default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'",...(production&&extname(filePath)!=='.html'?{'cache-control':'public,max-age=31536000,immutable'}:{'cache-control':'no-cache'})});return res.end(data)}catch{return json(req,res,404,{error:'Not found'})}
+      try{const data=await readFile(filePath);const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'content-type':types[extname(filePath)]||'application/octet-stream',...securityHeaders,'content-security-policy':"default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",...(production&&extname(filePath)!=='.html'?{'cache-control':'public,max-age=31536000,immutable'}:{'cache-control':'no-cache'})});return res.end(data)}catch{return json(req,res,404,{error:'Not found'})}
     }
     return json(req,res,404,{error:'Not found'});
   }catch(error){console.error('Request failed:',error);if(!res.headersSent)json(req,res,500,{error:'Internal server error'});else res.end()}

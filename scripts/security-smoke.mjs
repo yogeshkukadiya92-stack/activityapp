@@ -85,6 +85,10 @@ const smokeWorkshop=createdWorkshop.body.workshop;
 const createdActivity=await request(`/api/workshops/${smokeWorkshop.id}/activities`,{method:'POST',headers:auth,body:{title:'Priority vote',type:'Ranking',question:'What matters most?',options:['Health','Learning','Community'],settings:{showResults:true,anonymous:true}}});
 assert(createdActivity.status===200 && createdActivity.body.workshop.activities.length===2 && createdActivity.body.workshop.activities[1].options.length===3 && createdActivity.body.workshop.activities[1].settings.anonymous===true,'Configured activity creation failed');
 const activityId=createdActivity.body.workshop.activities[1].id;
+const isolatedParticipant=await request(`/api/sessions/${smokeWorkshop.joinCode}/join`,{method:'POST',body:{name:'Isolation QA'}});
+assert(isolatedParticipant.status===201,'Isolation participant join failed');
+const crossWorkshopResponse=await request(`/api/sessions/${smokeWorkshop.joinCode}/responses`,{method:'POST',body:{participantId:isolatedParticipant.body.participant.id,activityId:3,answer:'Must be rejected'}});
+assert(crossWorkshopResponse.status===422,'Responses must not target an activity from another workshop');
 const updatedActivity=await request(`/api/workshops/${smokeWorkshop.id}/activities/${activityId}`,{method:'PATCH',headers:auth,body:{title:'Priority ranking',type:'Ranking',question:'What matters most today?',options:['Health','Learning','Community','Rest'],settings:{showResults:false,anonymous:true}}});
 assert(updatedActivity.status===200 && updatedActivity.body.workshop.activities[1].title==='Priority ranking' && updatedActivity.body.workshop.activities[1].options[3]==='Rest' && updatedActivity.body.workshop.activities[1].settings.showResults===false,'Configured activity update failed');
 const removedActivity=await request(`/api/workshops/${smokeWorkshop.id}/activities/${activityId}`,{method:'DELETE',headers:auth});
@@ -106,4 +110,4 @@ assert(moderated.status===200,'Moderation failed');
 const current=await request('/api/sessions/27RJ27');
 assert(!current.body.responses.some(item=>item.id===responseId),'Hidden response remained public');
 
-console.log('Security smoke test passed: auth, workspace owner safeguards, member create/login/disable/delete RBAC, home dashboard, reports/CSV export, audience/groups/invites, templates/custom/use, configured activity CRUD, protected control, response moderation.');
+console.log('Security smoke test passed: auth, workspace owner safeguards, member create/login/disable/delete RBAC, home dashboard, reports/CSV export, audience/groups/invites, templates/custom/use, configured activity CRUD, workshop response isolation, protected control, response moderation.');
