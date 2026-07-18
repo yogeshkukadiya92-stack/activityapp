@@ -19,7 +19,7 @@ services:
       ADMIN_NAME: ${ADMIN_NAME:-CFL Administrator}
       ORGANIZATION_NAME: ${ORGANIZATION_NAME:-Coach For Life}
       ORGANIZATION_SLUG: ${ORGANIZATION_SLUG:-coach-for-life}
-      BOOTSTRAP_WORKSHOP: ${BOOTSTRAP_WORKSHOP:-true}
+      BOOTSTRAP_WORKSHOP: ${BOOTSTRAP_WORKSHOP:-false}
       BOOTSTRAP_DEMO_DATA: "false"
       SOURCE_COMMIT: ${SOURCE_COMMIT:-coolify}
     depends_on:
