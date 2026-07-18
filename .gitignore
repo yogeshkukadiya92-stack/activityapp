@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/
+.DS_Store
+work/*.png
+work/*.jpg
+outputs/*.png
+outputs/*.zip

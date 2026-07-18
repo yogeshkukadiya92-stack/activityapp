@@ -1,0 +1,68 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8787"
+    environment:
+      NODE_ENV: production
+      PORT: 8787
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the exact HTTPS application origin}
+      TRUST_PROXY: "true"
+      DATABASE_URL: postgresql://cfl_live:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/cfl_live
+      DATABASE_SSL: disable
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+      REDIS_URL: redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set the initial owner email}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set a unique 16+ character owner password}
+      ADMIN_NAME: ${ADMIN_NAME:-CFL Administrator}
+      ORGANIZATION_NAME: ${ORGANIZATION_NAME:-Coach For Life}
+      ORGANIZATION_SLUG: ${ORGANIZATION_SLUG:-coach-for-life}
+      BOOTSTRAP_WORKSHOP: ${BOOTSTRAP_WORKSHOP:-true}
+      BOOTSTRAP_DEMO_DATA: "false"
+      SOURCE_COMMIT: ${SOURCE_COMMIT:-coolify}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:8787/api/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    stop_grace_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cfl_live
+      POSTGRES_USER: cfl_live
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U cfl_live -d cfl_live"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    stop_grace_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server","--appendonly","yes","--requirepass","${SERVICE_PASSWORD_REDIS}","--maxmemory-policy","noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL","redis-cli -a '${SERVICE_PASSWORD_REDIS}' --no-auth-warning ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+
+volumes:
+  postgres_data:
+  redis_data:
