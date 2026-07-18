@@ -78,17 +78,17 @@ function Icon({ name, size = 20 }) {
 }
 
 function Logo({ compact = false }) {
-  return <div className={`logo ${compact ? 'compact' : ''}`}><span>CFL</span><b>Live</b><i>)))</i></div>;
+  return <div className={`logo ${compact ? 'compact' : ''}`} aria-label="CFL Live"><span>CFL</span><b>Live</b><i aria-hidden="true"><em/><em/><em/></i></div>;
 }
 
 function SideNav({ onOpenParticipant, active='home', onNavigate=()=>{} }) {
   const items = [['home','Home'],['calendar','Workshops'],['file','Templates'],['chart','Reports'],['users','Team'],['sliders','Workspace']];
   return <aside className="side-nav">
     <Logo />
-    <nav>{items.map(([icon,label]) => <button className={active===label.toLowerCase() ? 'active' : ''} onClick={()=>onNavigate(label.toLowerCase())} key={label}><Icon name={icon}/><span>{label}</span></button>)}</nav>
+    <nav aria-label="Primary navigation">{items.map(([icon,label]) => {const current=active===label.toLowerCase();return <button type="button" aria-current={current?'page':undefined} className={current ? 'active' : ''} onClick={()=>onNavigate(label.toLowerCase())} key={label}><Icon name={icon}/><span>{label}</span></button>})}</nav>
     <div className="side-bottom">
-      <button><Icon name="help"/><span>Help</span></button>
-      <button onClick={onOpenParticipant}><Icon name="qr"/><span>Join preview</span></button>
+      <button type="button"><Icon name="help"/><span>Help</span></button>
+      <button type="button" onClick={onOpenParticipant}><Icon name="qr"/><span>Join preview</span></button>
     </div>
   </aside>;
 }
@@ -402,13 +402,14 @@ function Projector({ onBack, joinCode='27RJ27' }) {
 function LoginApp({onLogin,onJoin}){
   const [email,setEmail]=useState(import.meta.env.DEV?'admin@cfl.live':''),[password,setPassword]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const submit=async event=>{event.preventDefault();setBusy(true);setError('');try{const result=await api('/api/auth/login',{method:'POST',body:{email,password}});setAuthToken(result.token);onLogin(result.user)}catch(err){setError(err.message)}finally{setBusy(false)}};
-  return <div className="login-page"><header><Logo compact/><button onClick={onJoin}>Join workshop</button></header><main><form className="login-card" onSubmit={submit}><div className="join-orb"><Icon name="users" size={32}/></div><h1>Presenter sign in</h1><p>Securely manage your live workshops and participant responses.</p><label>Email</label><input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required/><label>Password</label><input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/>{error&&<p className="login-error">{error}</p>}<button className="primary-btn" disabled={busy}>{busy?'Signing in…':'Sign in'}<Icon name="arrow"/></button></form></main></div>
+  return <div className="login-page"><header><Logo compact/><button onClick={onJoin}>Join workshop <Icon name="arrow" size={16}/></button></header><main><aside className="login-story"><span className="eyebrow"><i/> Live workshop intelligence</span><h2>Turn every room into an active conversation.</h2><p>Design activities, invite your audience and understand participation in real time—from one calm workspace.</p><div><article><Icon name="spark"/><strong>Real-time</strong><small>Results update instantly</small></article><article><Icon name="users"/><strong>Inclusive</strong><small>No app or account needed</small></article><article><Icon name="chart"/><strong>Measurable</strong><small>Actionable engagement data</small></article></div><footer><span className="story-avatars"><i>Y</i><i>P</i><i>+</i></span><p><strong>Built for facilitators</strong><small>Workshops that keep everyone involved</small></p></footer></aside><form className="login-card" onSubmit={submit}><div className="join-orb"><Icon name="users" size={28}/></div><span className="login-kicker">Presenter workspace</span><h1>Welcome back</h1><p>Sign in to manage your live workshops and participant responses.</p><label>Email</label><input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required/><label>Password</label><input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/>{error&&<p className="login-error">{error}</p>}<button className="primary-btn" disabled={busy}>{busy?'Signing in…':'Sign in securely'}<Icon name="arrow"/></button><small className="login-security"><Icon name="check" size={15}/> Secure, encrypted workspace access</small></form></main></div>
 }
 
 function App(){
   const requestedView=new URLSearchParams(location.search).get('view');
   const [view,setView]=useState(['home','workshops','templates','reports','team','workspace','join'].includes(requestedView)?requestedView:'home'),[user,setUser]=useState(undefined),[activeCode,setActiveCode]=useState('27RJ27'),[activeWorkshop,setActiveWorkshop]=useState('healthy-forever'),[editWorkshopId,setEditWorkshopId]=useState(null),[teamDrawer,setTeamDrawer]=useState(false);
   useEffect(()=>{if(!getAuthToken()){setUser(null);return}api('/api/auth/me',{auth:true}).then(result=>setUser(result.user)).catch(()=>{setAuthToken('');setUser(null)})},[]);
+  useEffect(()=>{window.scrollTo({top:0,behavior:'auto'})},[view,user?.id]);
   const logout=async()=>{try{await api('/api/auth/logout',{method:'POST',auth:true})}finally{setAuthToken('');setUser(null)}};
   if(view==='join')return <JoinApp onBack={()=>setView('presenter')}/>;
   if(user===undefined)return <div className="app-loading"><Logo compact/><span>Loading secure workspace…</span></div>;
