@@ -159,7 +159,7 @@ db.prepare("UPDATE activities SET options=?,settings=? WHERE lower(title)='daily
 const parseJson=(value,fallback)=>{try{return JSON.parse(value)}catch{return fallback}};
 const hydrateActivity=row=>row?({...row,options:Array.isArray(row.options)?row.options:parseJson(row.options,[]),settings:row.settings&&typeof row.settings==='object'?row.settings:parseJson(row.settings,{})}):row;
 const cleanMediaUrl=value=>{const url=String(value||'').trim().slice(0,500);return /^(https:\/\/|\/(?!\/))/.test(url)?url:''};
-const activityPayload=input=>({options:(Array.isArray(input.options)?input.options:[]).map(value=>String(value).trim().slice(0,120)).filter(Boolean).slice(0,12),settings:{allowMultiple:input.settings?.allowMultiple===undefined?String(input.type)==='Multiple Answers':Boolean(input.settings.allowMultiple),showResults:input.settings?.showResults!==false,anonymous:Boolean(input.settings?.anonymous),correctOption:Number.isInteger(Number(input.settings?.correctOption))?Math.max(0,Math.min(11,Number(input.settings.correctOption))):null,min:Math.max(0,Number(input.settings?.min)||0),max:Math.max(1,Math.min(100,Number(input.settings?.max)||10)),leftLabel:String(input.settings?.leftLabel||'Not at all').trim().slice(0,40),rightLabel:String(input.settings?.rightLabel||'Absolutely').trim().slice(0,40),imageUrl:cleanMediaUrl(input.settings?.imageUrl),optionImages:(Array.isArray(input.settings?.optionImages)?input.settings.optionImages:[]).map(cleanMediaUrl).slice(0,12)}});
+const activityPayload=input=>({options:(Array.isArray(input.options)?input.options:[]).map(value=>String(value).trim().slice(0,120)).filter(Boolean).slice(0,12),settings:{allowMultiple:input.settings?.allowMultiple===undefined?String(input.type)==='Multiple Answers':Boolean(input.settings.allowMultiple),showResults:input.settings?.showResults!==false,anonymous:Boolean(input.settings?.anonymous),correctOption:Number.isInteger(Number(input.settings?.correctOption))?Math.max(0,Math.min(11,Number(input.settings.correctOption))):null,min:Math.max(0,Number(input.settings?.min)||0),max:Math.max(1,Math.min(100,Number(input.settings?.max)||10)),leftLabel:String(input.settings?.leftLabel||'Not at all').trim().slice(0,40),rightLabel:String(input.settings?.rightLabel||'Absolutely').trim().slice(0,40),imageUrl:cleanMediaUrl(input.settings?.imageUrl),optionImages:(Array.isArray(input.settings?.optionImages)?input.settings.optionImages:[]).map(cleanMediaUrl).slice(0,12),followUps:(Array.isArray(input.settings?.followUps)?input.settings.followUps:[]).map(value=>String(value||'').trim().slice(0,180)).slice(0,12)}});
 
 const hashPassword = (password, salt=randomBytes(16).toString('hex')) => `${salt}:${scryptSync(password,salt,64).toString('hex')}`;
 const verifyPassword = (password, stored) => {
@@ -414,7 +414,7 @@ export function addResponse(joinCode, input) {
   if (!participant) return null;
   const activityId = Number(input.activityId || session.currentActivityId);
   const activity = db.prepare('SELECT id FROM activities WHERE id=? AND workshop_id=(SELECT workshop_id FROM live_sessions WHERE id=?)').get(activityId,session.id);
-  const answer = String(input.answer || '').trim().slice(0,280);
+  const answer = String(input.answer || '').trim().slice(0,500);
   if (!activity || !answer) return null;
   const response = { id: randomUUID(), sessionId: session.id, activityId, participantId: participant.id, answer };
   db.prepare('INSERT INTO responses (id,session_id,activity_id,participant_id,answer) VALUES (?,?,?,?,?)')

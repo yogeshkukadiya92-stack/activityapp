@@ -104,12 +104,19 @@ const advancedActivities=[
   {title:'Find it',type:'Hotspot Challenge',question:'Where is the target?',settings:{imageUrl:'https://images.example.com/map.jpg'}},
   {title:'Forecast',type:'Prediction Game',question:'What happens next?',options:['Grow','Hold','Drop'],settings:{correctOption:1}},
   {title:'Promise',type:'Commitment Wall',question:'What will you commit to?'},
+  {title:'Branching pulse',type:'Conditional Poll',question:'Would you recommend this workshop?',options:['Yes','No'],settings:{followUps:['What helped you most?','What should we improve?']}},
 ];
 const advancedWorkshop=await request('/api/workshops',{method:'POST',headers:auth,body:{title:`Advanced activities ${unique}`,activities:advancedActivities}});
-assert(advancedWorkshop.status===201&&advancedWorkshop.body.workshop.activities.length===7,'Advanced activity creation failed');
+assert(advancedWorkshop.status===201&&advancedWorkshop.body.workshop.activities.length===8,'Advanced activity creation failed');
 const advancedSaved=advancedWorkshop.body.workshop.activities;
 assert(advancedSaved.map(item=>item.type).join('|')===advancedActivities.map(item=>item.type).join('|'),'Advanced activity types were not persisted');
-assert(advancedSaved[0].settings.optionImages[0].startsWith('https://')&&advancedSaved[0].settings.optionImages[1]===''&&advancedSaved[1].settings.max===7&&advancedSaved[1].settings.rightLabel==='Confident'&&advancedSaved[4].settings.imageUrl.startsWith('https://')&&advancedSaved[5].settings.correctOption===1,'Advanced activity settings validation failed');
+assert(advancedSaved[0].settings.optionImages[0].startsWith('https://')&&advancedSaved[0].settings.optionImages[1]===''&&advancedSaved[1].settings.max===7&&advancedSaved[1].settings.rightLabel==='Confident'&&advancedSaved[4].settings.imageUrl.startsWith('https://')&&advancedSaved[5].settings.correctOption===1&&advancedSaved[7].settings.followUps[0]==='What helped you most?'&&advancedSaved[7].settings.followUps[1]==='What should we improve?','Advanced activity settings validation failed');
+const conditionalControlled=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/control`,{method:'POST',headers:auth,body:{currentActivityId:advancedSaved[7].id}});
+assert(conditionalControlled.status===200,'Conditional activity selection failed');
+const conditionalParticipant=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/join`,{method:'POST',body:{name:'Branch QA'}});
+const conditionalAnswer=JSON.stringify({choice:'Yes',followUp:'The practical examples helped me most.'});
+const conditionalResponse=await request(`/api/sessions/${advancedWorkshop.body.workshop.joinCode}/responses`,{method:'POST',body:{participantId:conditionalParticipant.body.participant.id,activityId:advancedSaved[7].id,answer:conditionalAnswer}});
+assert(conditionalResponse.status===201&&conditionalResponse.body.response.answer===conditionalAnswer,'Conditional poll response persistence failed');
 const removedAdvancedWorkshop=await request(`/api/workshops/${advancedWorkshop.body.workshop.id}`,{method:'DELETE',headers:auth});
 assert(removedAdvancedWorkshop.status===200,'Advanced activity cleanup failed');
 
@@ -127,4 +134,4 @@ assert(moderated.status===200,'Moderation failed');
 const current=await request('/api/sessions/27RJ27');
 assert(!current.body.responses.some(item=>item.id===responseId),'Hidden response remained public');
 
-console.log('Security smoke test passed: auth, workspace owner safeguards, member create/login/disable/delete RBAC, home dashboard, reports/CSV export, audience/groups/invites, templates/custom/use, configured and advanced activity persistence, workshop response isolation, protected control, response moderation.');
+console.log('Security smoke test passed: auth, workspace owner safeguards, member create/login/disable/delete RBAC, home dashboard, reports/CSV export, audience/groups/invites, templates/custom/use, advanced and conditional activity persistence, branching responses, workshop response isolation, protected control, response moderation.');
