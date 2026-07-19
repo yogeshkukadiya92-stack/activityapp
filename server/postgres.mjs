@@ -60,11 +60,28 @@ async function bootstrapWorkshop(){
 }
 async function bootstrapAdmin(){
   const email=process.env.ADMIN_EMAIL.toLowerCase().trim();
-  await pool.query('INSERT INTO users(id,email,name,role,password_hash) VALUES($1,$2,$3,$4,$5) ON CONFLICT(email) DO NOTHING',['user-admin',email,process.env.ADMIN_NAME||'CFL Administrator','admin',hashPassword(process.env.ADMIN_PASSWORD)]);
   const name=String(process.env.ORGANIZATION_NAME||'Coach For Life').trim().slice(0,80)||'Coach For Life',slug=String(process.env.ORGANIZATION_SLUG||'coach-for-life').toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'coach-for-life';
-  await pool.query("INSERT INTO organizations(id,name,slug) VALUES('org-cfl',$1,$2) ON CONFLICT(id) DO NOTHING",[name,slug]);
-  await pool.query("INSERT INTO organization_memberships(organization_id,user_id,role,status) SELECT 'org-cfl',id,'owner','active' FROM users WHERE email=$1 ON CONFLICT DO NOTHING",[email]);
-  await pool.query("INSERT INTO organization_memberships(organization_id,user_id,role,status) SELECT 'org-cfl',id,CASE WHEN role='admin' THEN 'admin' ELSE 'presenter' END,'active' FROM users ON CONFLICT DO NOTHING");
+  const client=await pool.connect();
+  try{
+    await client.query('BEGIN');
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('activityapp-bootstrap-admin'))");
+    let admin=(await client.query('SELECT id FROM users WHERE email=$1',[email])).rows[0];
+    if(!admin){
+      const preferredIdTaken=(await client.query("SELECT 1 FROM users WHERE id='user-admin'")).rowCount>0;
+      const adminId=preferredIdTaken?randomUUID():'user-admin';
+      admin=(await client.query('INSERT INTO users(id,email,name,role,password_hash) VALUES($1,$2,$3,$4,$5) RETURNING id',[adminId,email,process.env.ADMIN_NAME||'CFL Administrator','admin',hashPassword(process.env.ADMIN_PASSWORD)])).rows[0];
+    }
+    await client.query("UPDATE users SET role='admin' WHERE id=$1",[admin.id]);
+    await client.query("INSERT INTO organizations(id,name,slug) VALUES('org-cfl',$1,$2) ON CONFLICT(id) DO NOTHING",[name,slug]);
+    await client.query("INSERT INTO organization_memberships(organization_id,user_id,role,status) VALUES('org-cfl',$1,'owner','active') ON CONFLICT(organization_id,user_id) DO UPDATE SET role='owner',status='active'",[admin.id]);
+    await client.query("INSERT INTO organization_memberships(organization_id,user_id,role,status) SELECT 'org-cfl',id,CASE WHEN role='admin' THEN 'admin' ELSE 'presenter' END,'active' FROM users ON CONFLICT DO NOTHING");
+    await client.query('COMMIT');
+  }catch(error){
+    await client.query('ROLLBACK');
+    throw error;
+  }finally{
+    client.release();
+  }
 }
 
 export async function getSession(joinCode='27RJ27'){
