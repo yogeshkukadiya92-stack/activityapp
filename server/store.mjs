@@ -34,6 +34,15 @@ export const getReportExportRows=(...args)=>Promise.resolve(driver.getReportExpo
 export const getAudience=(...args)=>Promise.resolve(driver.getAudience(...args));
 export const createAudienceGroup=(...args)=>Promise.resolve(driver.createAudienceGroup(...args));
 export const addAudiencePeople=(...args)=>Promise.resolve(driver.addAudiencePeople(...args));
+export const getLeads=(...args)=>Promise.resolve(driver.getLeads(...args));
+export const getLeadById=(...args)=>Promise.resolve(driver.getLeadById(...args));
+export const createLead=(...args)=>Promise.resolve(driver.createLead(...args));
+export const updateLead=(...args)=>Promise.resolve(driver.updateLead(...args));
+export const assignLead=(...args)=>Promise.resolve(driver.assignLead(...args));
+export const addLeadContactLog=(...args)=>Promise.resolve(driver.addLeadContactLog(...args));
+export const getLeadWorkshopHistory=(...args)=>Promise.resolve(driver.getLeadWorkshopHistory(...args));
+export const trackLeadWorkshopEvent=(...args)=>Promise.resolve(driver.trackLeadWorkshopEvent(...args));
+export const getLeadReports=(...args)=>Promise.resolve(driver.getLeadReports(...args));
 export const listTemplates=(...args)=>Promise.resolve(driver.listTemplates(...args));
 export const getTemplate=(...args)=>Promise.resolve(driver.getTemplate(...args));
 export const createTemplate=(...args)=>Promise.resolve(driver.createTemplate(...args));

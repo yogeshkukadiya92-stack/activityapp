@@ -27,6 +27,35 @@ export async function init(){
     CREATE TABLE IF NOT EXISTS audience_memberships(person_id TEXT NOT NULL REFERENCES audience_people(id) ON DELETE CASCADE,group_id TEXT NOT NULL REFERENCES audience_groups(id) ON DELETE CASCADE,PRIMARY KEY(person_id,group_id));
     CREATE TABLE IF NOT EXISTS workshop_templates(id TEXT PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL,category TEXT NOT NULL,estimated_minutes INTEGER NOT NULL DEFAULT 10,usage_count INTEGER NOT NULL DEFAULT 0,is_custom BOOLEAN NOT NULL DEFAULT FALSE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
     CREATE TABLE IF NOT EXISTS template_activities(id TEXT PRIMARY KEY,template_id TEXT NOT NULL REFERENCES workshop_templates(id) ON DELETE CASCADE,position INTEGER NOT NULL,title TEXT NOT NULL,type TEXT NOT NULL,question TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS leads(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE,phone TEXT UNIQUE,source TEXT NOT NULL DEFAULT 'offline_form',status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','contacted','interested','registered','no_show','dropped')),assigned_to TEXT REFERENCES users(id) ON DELETE SET NULL,notes TEXT NOT NULL DEFAULT '',last_active_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS lead_workshop_links(
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      workshop_id TEXT NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'invited' CHECK(status IN ('invited','joined','registered')),
+      invited_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      joined_at TIMESTAMPTZ,
+      registered_at TIMESTAMPTZ,
+      last_active_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(lead_id,workshop_id)
+    );
+    CREATE TABLE IF NOT EXISTS lead_contact_logs(
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      method TEXT NOT NULL DEFAULT 'other' CHECK(method IN ('call','whatsapp','email','instagram_dm','facebook_dm','sms','meeting','other')),
+      notes TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS lead_reassign_logs(
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      previous_assignee TEXT REFERENCES users(id) ON DELETE SET NULL,
+      new_assignee TEXT REFERENCES users(id) ON DELETE SET NULL,
+      assigned_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE INDEX IF NOT EXISTS idx_responses_session_activity ON responses(session_id,activity_id,status);
     CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(session_id);
     CREATE INDEX IF NOT EXISTS idx_auth_token_expiry ON auth_sessions(token_hash,expires_at);
@@ -35,6 +64,12 @@ export async function init(){
     CREATE INDEX IF NOT EXISTS idx_templates_category ON workshop_templates(category,is_custom);
     CREATE INDEX IF NOT EXISTS idx_template_activities_template ON template_activities(template_id,position);
     CREATE INDEX IF NOT EXISTS idx_organization_memberships_user ON organization_memberships(user_id,status);
+    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status,updated_at);
+    CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(source,status);
+    CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
+    CREATE INDEX IF NOT EXISTS idx_lead_workshop_links_lead ON lead_workshop_links(lead_id);
+    CREATE INDEX IF NOT EXISTS idx_lead_workshop_links_workshop ON lead_workshop_links(workshop_id);
+    CREATE INDEX IF NOT EXISTS idx_lead_contact_logs_lead ON lead_contact_logs(lead_id,created_at);
   `);
   await pool.query("ALTER TABLE activities ADD COLUMN IF NOT EXISTS options JSONB NOT NULL DEFAULT '[]'::jsonb; ALTER TABLE activities ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb; ALTER TABLE template_activities ADD COLUMN IF NOT EXISTS options JSONB NOT NULL DEFAULT '[]'::jsonb; ALTER TABLE template_activities ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb");
   await pool.query("UPDATE activities SET options='[]'::jsonb WHERE jsonb_typeof(options)<>'array'; UPDATE activities SET settings='{}'::jsonb WHERE jsonb_typeof(settings)<>'object'; UPDATE template_activities SET options='[]'::jsonb WHERE jsonb_typeof(options)<>'array'; UPDATE template_activities SET settings='{}'::jsonb WHERE jsonb_typeof(settings)<>'object'");
@@ -130,5 +165,245 @@ export async function moderateResponse(responseId,status,userId){if(!['visible',
 export async function writeAudit(userId,action,targetType,targetId,metadata={}){await pool.query('INSERT INTO audit_logs(id,user_id,action,target_type,target_id,metadata) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),userId||null,action,targetType||null,targetId||null,metadata])}
 export async function getJoinCodeForSession(sessionId){return(await one('SELECT w.join_code FROM live_sessions s JOIN workshops w ON w.id=s.workshop_id WHERE s.id=$1',[sessionId]))?.join_code||null}
 export async function tickLiveSessions(){await pool.query("UPDATE live_sessions SET seconds_remaining=GREATEST(0,seconds_remaining-1),updated_at=NOW() WHERE status='live' AND seconds_remaining>0");await pool.query("UPDATE live_sessions SET status='paused' WHERE status='live' AND seconds_remaining=0")}
+
+const leadStatuses = new Set(['new','contacted','interested','registered','no_show','dropped']);
+const leadEvents = new Set(['invited','joined','registered']);
+const leadContactMethods = new Set(['call','whatsapp','email','instagram_dm','facebook_dm','sms','meeting']);
+const normalizeLeadStatus = input => {
+  const status = String(input || 'new').toLowerCase().trim();
+  return leadStatuses.has(status) ? status : 'new';
+};
+const normalizeLeadSource = input => {
+  const source = String(input || 'offline_form').trim().toLowerCase();
+  return source || 'offline_form';
+};
+const normalizeLeadMethod = input => {
+  const method = String(input || 'other').toLowerCase().trim().replace(/[^a-z_]/g, '');
+  return leadContactMethods.has(method) ? method : 'other';
+};
+const normalizeLeadWorkshopStatus = input => {
+  const status = String(input || 'invited').toLowerCase().trim();
+  return leadEvents.has(status) ? status : 'invited';
+};
+const normalizeLeadWorkshop = async id => (id ? (await one('SELECT id FROM workshops WHERE id=$1', [id]))?.id || null : null);
+const normalizeLeadAssignee = async id => (id ? (await one('SELECT 1 AS one FROM users WHERE id=$1',[id]) ? id : null) : null);
+const normalizeLeadLeadId = async id => (id ? (await one('SELECT 1 AS one FROM leads WHERE id=$1', [id]) ? id : null) : null);
+
+const leadWorkshopSelect = `
+  SELECT
+    l.id,l.name,l.email,l.phone,l.source,l.status,l.assigned_to AS "assignedTo",
+    u.name AS "assigneeName",u.email AS "assigneeEmail",l.notes,l.created_at AS "createdAt",l.updated_at AS "updatedAt",
+    (SELECT COUNT(*) FROM lead_workshop_links lwl WHERE lwl.lead_id=l.id) AS "workshopCount",
+    (SELECT COUNT(*) FROM lead_contact_logs lcl WHERE lcl.lead_id=l.id) AS "contactCount"
+  FROM leads l
+  LEFT JOIN users u ON u.id=l.assigned_to
+`;
+const formatLeadSummary = row => row ? {
+  id: row.id,
+  name: row.name,
+  email: row.email,
+  phone: row.phone,
+  source: row.source,
+  status: row.status,
+  assignedTo: row.assignedTo || null,
+  assigneeName: row.assigneeName || null,
+  assigneeEmail: row.assigneeEmail || null,
+  notes: row.notes || '',
+  workshopCount: Number(row.workshopCount || 0),
+  contactCount: Number(row.contactCount || 0),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+} : null;
+
+export async function getLeads(query = '', status = 'all', source = 'all', assignee = 'all', workshop = 'all') {
+  const search = `%${String(query || '').trim().toLowerCase().slice(0, 80)}%`;
+  const filterStatus = leadStatuses.has(status) ? status : null;
+  const filterSource = source && source !== 'all' ? String(source).trim().toLowerCase() : null;
+  const filterAssignee = assignee && assignee !== 'all' ? String(assignee).trim() : null;
+  const filterWorkshop = await normalizeLeadWorkshop(workshop);
+  const leads = (await pool.query(`
+    ${leadWorkshopSelect}
+    WHERE (lower(l.name) LIKE $1 OR lower(l.email) LIKE $1 OR lower(l.phone) LIKE $1 OR lower(COALESCE(l.notes,'')) LIKE $1)
+      AND ($2::text IS NULL OR l.status=$2)
+      AND ($3::text IS NULL OR l.source=$3)
+      AND ($4::text IS NULL OR l.assigned_to=$4)
+      AND ($5::text IS NULL OR EXISTS(SELECT 1 FROM lead_workshop_links x WHERE x.lead_id=l.id AND x.workshop_id=$5))
+    ORDER BY l.updated_at DESC
+  `, [search, filterStatus, filterSource, filterAssignee, filterWorkshop])).rows;
+  const summary = await one(`
+    SELECT
+      COUNT(*)::int AS "totalLeads",
+      COALESCE(SUM((status='new')::int),0) AS "newLeads",
+      COALESCE(SUM((status='contacted')::int),0) AS "contactedLeads",
+      COALESCE(SUM((status='interested')::int),0) AS "interestedLeads",
+      COALESCE(SUM((status='registered')::int),0) AS "registeredLeads",
+      COALESCE(SUM((status='no_show')::int),0) AS "noShowLeads",
+      COALESCE(SUM((status='dropped')::int),0) AS "droppedLeads"
+    FROM leads
+  `);
+  return { leads: leads.map(formatLeadSummary), summary };
+}
+
+export async function getLeadById(id) {
+  if (!(await normalizeLeadLeadId(id))) return null;
+  return formatLeadSummary((await pool.query(`${leadWorkshopSelect} WHERE l.id=$1`, [id])).rows[0] || null);
+}
+
+export async function createLead(input = {}) {
+  const name = String(input.name || '').trim().slice(0, 80);
+  const email = String(input.email || '').trim().toLowerCase().slice(0, 180);
+  const phone = String(input.phone || '').trim().slice(0, 40);
+  const source = normalizeLeadSource(input.source);
+  const status = normalizeLeadStatus(input.status);
+  const notes = String(input.notes || '').trim().slice(0, 2000);
+  const assignedTo = await normalizeLeadAssignee(input.assignedTo);
+  const workshopId = await normalizeLeadWorkshop(input.workshopId);
+  if (!name && !email && !phone) return { error: 'missing_identity' };
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'invalid_email' };
+  if (phone && !/^[+0-9 ()-]{7,25}$/.test(phone)) return { error: 'invalid_phone' };
+  if (email && (await one('SELECT 1::int AS one FROM leads WHERE email=$1', [email]))) return { error: 'duplicate_email' };
+  if (phone && (await one('SELECT 1::int AS one FROM leads WHERE phone=$1', [phone]))) return { error: 'duplicate_phone' };
+
+  const id = randomUUID();
+  await pool.query(`
+    INSERT INTO leads(id,name,email,phone,source,status,assigned_to,notes,last_active_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP)
+  `, [id, name, email || null, phone || null, source, status, assignedTo, notes]);
+  if (workshopId) {
+    const linkId = randomUUID();
+    await pool.query('INSERT INTO lead_workshop_links(id,lead_id,workshop_id,status) VALUES($1,$2,$3,\'invited\')', [linkId, id, workshopId]);
+  }
+  return getLeadById(id);
+}
+
+export async function updateLead(id, input = {}) {
+  if (!(await normalizeLeadLeadId(id))) return { error: 'not_found' };
+  const name = input.name === undefined ? undefined : String(input.name || '').trim().slice(0, 80);
+  const email = input.email === undefined ? undefined : String(input.email || '').trim().toLowerCase().slice(0, 180);
+  const phone = input.phone === undefined ? undefined : String(input.phone || '').trim().slice(0, 40);
+  const source = input.source === undefined ? undefined : normalizeLeadSource(input.source);
+  const status = input.status === undefined ? undefined : normalizeLeadStatus(input.status);
+  const notes = input.notes === undefined ? undefined : String(input.notes || '').trim().slice(0, 2000);
+  const assignedTo = input.assignedTo === undefined ? undefined : await normalizeLeadAssignee(input.assignedTo);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'invalid_email' };
+  if (phone && !/^[+0-9 ()-]{7,25}$/.test(phone)) return { error: 'invalid_phone' };
+  if (input.assignedTo && assignedTo === null) return { error: 'invalid_assignee' };
+
+  await pool.query(`
+    UPDATE leads
+    SET
+      name = COALESCE(NULLIF($1::text,''), name),
+      email = COALESCE(NULLIF($2::text,''), email),
+      phone = COALESCE(NULLIF($3::text,''), phone),
+      source = COALESCE(NULLIF($4::text,''), source),
+      status = COALESCE(NULLIF($5::text,''), status),
+      assigned_to = $6,
+      notes = COALESCE(NULLIF($7::text,''), notes),
+      updated_at = NOW()
+    WHERE id=$8
+  `, [name || null, email || null, phone || null, source || null, status || null, assignedTo || null, notes || null, id]);
+  return getLeadById(id);
+}
+
+export async function assignLead(leadId, userId, actorId = null) {
+  if (!(await normalizeLeadLeadId(leadId))) return { error: 'not_found' };
+  const nextOwner = await normalizeLeadAssignee(userId);
+  if (userId && !nextOwner) return { error: 'invalid_assignee' };
+  const current = await one('SELECT assigned_to FROM leads WHERE id=$1', [leadId]);
+  await pool.query('UPDATE leads SET assigned_to=$2,updated_at=NOW() WHERE id=$1', [leadId, nextOwner || null]);
+  if (actorId) {
+    await pool.query(`
+      INSERT INTO lead_reassign_logs(id,lead_id,previous_assignee,new_assignee,assigned_by)
+      VALUES($1,$2,$3,$4,$5)
+    `, [randomUUID(), leadId, current?.assigned_to || null, nextOwner || null, actorId]);
+  }
+  return getLeadById(leadId);
+}
+
+export async function addLeadContactLog(leadId, input = {}, userId = null) {
+  if (!(await normalizeLeadLeadId(leadId))) return { error: 'not_found' };
+  const method = normalizeLeadMethod(input.method);
+  const note = String(input.note || input.notes || '').trim().slice(0, 2000);
+  if (!note) return { error: 'missing_note' };
+  const actor = await normalizeLeadAssignee(userId);
+  const id = randomUUID();
+  await pool.query(`
+    INSERT INTO lead_contact_logs(id,lead_id,user_id,method,notes)
+    VALUES($1,$2,$3,$4,$5)
+  `, [id, leadId, actor, method, note]);
+  await pool.query("UPDATE leads SET status='contacted',updated_at=NOW() WHERE id=$1 AND status='new'", [leadId]);
+  return (await pool.query(`SELECT id,lead_id AS "leadId",user_id AS "loggedBy",method,notes,created_at AS "createdAt" FROM lead_contact_logs WHERE id=$1`, [id])).rows[0];
+}
+
+export async function getLeadWorkshopHistory(leadId) {
+  if (!(await normalizeLeadLeadId(leadId))) return { error: 'not_found' };
+  const workshopHistory = (await pool.query(`
+    SELECT l.id,w.id AS "workshopId",w.title AS "workshopTitle",w.join_code AS "workshopJoinCode",l.status,
+      l.invited_at AS "invitedAt",l.joined_at AS "joinedAt",l.registered_at AS "registeredAt",l.last_active_at AS "lastActiveAt",l.updated_at AS "updatedAt"
+    FROM lead_workshop_links l
+    JOIN workshops w ON w.id=l.workshop_id
+    WHERE l.lead_id=$1
+    ORDER BY l.updated_at DESC
+  `, [leadId])).rows;
+  const contactLogs = (await pool.query(`
+    SELECT id,lead_id AS "leadId",COALESCE(u.name,u.email) AS "actorName",user_id AS "loggedBy",method,notes,created_at AS "createdAt"
+    FROM lead_contact_logs c
+    LEFT JOIN users u ON u.id=c.user_id
+    WHERE c.lead_id=$1
+    ORDER BY c.created_at DESC
+    LIMIT 80
+  `, [leadId])).rows;
+  return { lead: await getLeadById(leadId), workshopHistory, contactLogs };
+}
+
+export async function trackLeadWorkshopEvent(leadId, workshopId, event = 'invited') {
+  if (!(await normalizeLeadLeadId(leadId))) return { error: 'not_found' };
+  const normalizedWorkshop = await normalizeLeadWorkshop(workshopId);
+  if (!normalizedWorkshop) return { error: 'invalid_workshop' };
+  const normalizedEvent = normalizeLeadWorkshopStatus(event);
+  const existing = await one('SELECT 1::int AS one FROM lead_workshop_links WHERE lead_id=$1 AND workshop_id=$2', [leadId, normalizedWorkshop]);
+  if (existing) {
+    await pool.query(`
+      UPDATE lead_workshop_links
+      SET status=$1,updated_at=NOW(),
+          invited_at=CASE WHEN status='invited' AND $1='invited' THEN invited_at ELSE invited_at END,
+          joined_at=CASE WHEN $1='joined' THEN NOW() ELSE joined_at END,
+          registered_at=CASE WHEN $1='registered' THEN NOW() ELSE registered_at END
+      WHERE lead_id=$2 AND workshop_id=$3
+    `, [normalizedEvent, leadId, normalizedWorkshop]);
+  } else {
+    await pool.query(`
+      INSERT INTO lead_workshop_links(id,lead_id,workshop_id,status,invited_at,joined_at,registered_at)
+      VALUES($1,$2,$3,$4,CASE WHEN $4='invited' THEN NOW() ELSE NULL END,CASE WHEN $4='joined' THEN NOW() ELSE NULL END,CASE WHEN $4='registered' THEN NOW() ELSE NULL END)
+    `, [randomUUID(), leadId, normalizedWorkshop, normalizedEvent]);
+  }
+  if (normalizedEvent === 'joined') await pool.query("UPDATE leads SET status='interested',updated_at=NOW() WHERE id=$1", [leadId]);
+  if (normalizedEvent === 'registered') await pool.query("UPDATE leads SET status='registered',updated_at=NOW() WHERE id=$1", [leadId]);
+  return getLeadWorkshopHistory(leadId);
+}
+
+export async function getLeadReports() {
+  const summary = await one(`
+    SELECT
+      COUNT(*)::int AS "totalLeads",
+      COALESCE(SUM((status='new')::int),0) AS "newLeads",
+      COALESCE(SUM((status='contacted')::int),0) AS "contactedLeads",
+      COALESCE(SUM((status='interested')::int),0) AS "interestedLeads",
+      COALESCE(SUM((status='registered')::int),0) AS "registeredLeads",
+      COALESCE(SUM((status='no_show')::int),0) AS "noShowLeads",
+      COALESCE(SUM((status='dropped')::int),0) AS "droppedLeads"
+    FROM leads
+  `);
+  const bySource = (await pool.query("SELECT source,COUNT(*)::int AS count FROM leads GROUP BY source ORDER BY COUNT(*) DESC")).rows;
+  const byAssignee = (await pool.query(`
+    SELECT l.assigned_to AS "assigneeId",u.name AS "assigneeName",COUNT(*)::int AS count
+    FROM leads l
+    LEFT JOIN users u ON u.id=l.assigned_to
+    GROUP BY l.assigned_to,u.name
+    ORDER BY count DESC
+  `)).rows;
+  return { summary, bySource, byAssignee };
+}
+
 export async function health(){await pool.query('SELECT 1');return{driver:'postgresql'}}
 export async function close(){await pool.end()}

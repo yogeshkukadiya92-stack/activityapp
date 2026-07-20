@@ -85,7 +85,7 @@ function Logo({ compact = false }) {
 }
 
 function SideNav({ onOpenParticipant, active='home', onNavigate=()=>{} }) {
-  const items = [['home','Home'],['calendar','Workshops'],['file','Templates'],['chart','Reports'],['users','Team'],['sliders','Workspace']];
+  const items = [['home','Home'],['calendar','Workshops'],['file','Templates'],['chart','Reports'],['bookmark','Leads'],['users','Team'],['sliders','Workspace']];
   return <aside className="side-nav">
     <Logo />
     <nav aria-label="Primary navigation">{items.map(([icon,label]) => {const current=active===label.toLowerCase();return <button type="button" aria-current={current?'page':undefined} className={current ? 'active' : ''} onClick={()=>onNavigate(label.toLowerCase())} key={label}><Icon name={icon}/><span>{label}</span></button>})}</nav>
@@ -338,6 +338,24 @@ function TrendChart({rows,days,label}){
 
 const compactNumber=value=>new Intl.NumberFormat('en',{notation:Number(value)>=1000?'compact':'standard',maximumFractionDigits:1}).format(Number(value)||0);
 const homeStatus=value=>value==='live'?'Live':value==='paused'?'Paused':value==='ended'?'Completed':'Ready';
+const leadStatusChoices=['new','contacted','interested','registered','no_show','dropped'];
+const leadSourceChoices=['instagram','facebook','workshop','offline_form','whatsapp_broadcast','referral','other'];
+const leadContactMethods=['call','whatsapp','email','instagram_dm','facebook_dm','sms','meeting','other'];
+const leadWorkshopStates=['invited','joined','registered'];
+const leadStatusLabel=value=>({new:'New',contacted:'Contacted',interested:'Interested',registered:'Registered',no_show:'No show',dropped:'Dropped'}[value]||'Unknown');
+const leadSourceLabel=value=>({instagram:'Instagram',facebook:'Facebook',workshop:'Workshop',offline_form:'Offline form',whatsapp_broadcast:'WhatsApp',referral:'Referral'}[value]||value?.replace(/_/g,' ')?.replace(/\b\w/g,chunk=>chunk.toUpperCase())||'Other');
+const leadMethodLabel=value=>({call:'Call',whatsapp:'WhatsApp',email:'Email',instagram_dm:'Instagram DM',facebook_dm:'Facebook DM',sms:'SMS',meeting:'Meeting',other:'Other'}[value]||'Other');
+const leadStatusSummary=(summary={})=>{
+  const values=summary||{};
+  return [
+    ['new',values.newLeads||0,'new'],
+    ['contacted',values.contactedLeads||0,'contacted'],
+    ['interested',values.interestedLeads||0,'interested'],
+    ['registered',values.registeredLeads||0,'registered'],
+    ['no_show',values.noShowLeads||0,'no_show'],
+    ['dropped',values.droppedLeads||0,'dropped'],
+  ];
+};
 
 function HomeBars({trend}){
   const participants=new Map((trend?.participants||[]).map(item=>[item.day,Number(item.count)])),responses=new Map((trend?.responses||[]).map(item=>[item.day,Number(item.count)])),today=new Date(),visibleDays=Array.from({length:18},(_,index)=>{const date=new Date(today);date.setDate(today.getDate()-(17-index));return date.toLocaleDateString('en-CA')}),max=Math.max(1,...visibleDays.flatMap(day=>[participants.get(day)||0,responses.get(day)||0]));
@@ -356,7 +374,7 @@ function HomeApp({user,onLogout,onJoin,onNavigate,onOpenWorkshop,onInvite}){
     <div className="home-middle"><section className="home-next"><h2>Next workshop</h2>{next?<><div className="home-next-title"><i><Icon name="heart" size={34}/></i><div><h3>{next.title}</h3><span className={`home-live ${next.status}`}><i/>{next.status==='live'?'LIVE NOW':homeStatus(next.status).toUpperCase()}</span></div></div><div className="home-next-stats"><span><small>Join code</small><b>{next.joinCode}</b></span><span><small>Participants</small><b><Icon name="users" size={16}/>{next.participantCount}</b></span><span><small>Answers</small><b><Icon name="chat" size={16}/>{next.answerCount}</b></span></div><div className="home-next-actions"><button className="primary" onClick={()=>onOpenWorkshop(next.joinCode,next.id)}>Open presenter <Icon name="external" size={16}/></button><button onClick={copyJoin}><Icon name="link" size={16}/>{copied?'Link copied':'Copy join link'}</button></div></>:<div className="home-empty">Create your first workshop to get started.</div>}</section>
       <section className="home-participation"><header><h2>Participation</h2><select aria-label="Participation range"><option>Last 30 days</option></select></header><div className="home-participation-body"><aside><span>Total participants<strong>{compactNumber(summary.participants)}</strong></span><span>Total responses<strong>{compactNumber(summary.responses)}</strong></span></aside><HomeBars trend={dashboard?.trend}/></div></section></div>
     <div className="home-bottom"><section className="home-recent"><h2>Recent workshops</h2><div className="home-table"><header><span>Workshop</span><span>Status</span><span>Participants</span><span>Responses</span><span>Last activity</span><span>Action</span></header>{recent.map((item,index)=>{const [icon,color]=[['heart','green'],['users','blue'],['spark','orange'],['book','violet']][index%4];return <article key={item.id}><span><i className={`home-row-icon ${color}`}><Icon name={icon}/></i><strong>{item.title}</strong></span><span><b className={`home-status ${item.status}`}>{homeStatus(item.status)}</b></span><span><Icon name="users" size={15}/>{item.participants}</span><span><Icon name="chat" size={15}/>{item.responses}</span><span>{new Date(item.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</span><button onClick={()=>onOpenWorkshop(item.joinCode,item.id)}>Open <Icon name="external" size={14}/></button></article>})}{!recent.length&&<div className="home-empty">No workshops yet.</div>}</div></section>
-      <aside className="home-quick"><section><h2>Quick actions</h2><button onClick={()=>onNavigate('templates')}><i className="blue"><Icon name="file"/></i><span>Browse templates</span><Icon name="arrow"/></button><button onClick={onInvite}><i className="green"><Icon name="users"/></i><span>Invite audience</span><Icon name="arrow"/></button><button onClick={()=>onNavigate('reports')}><i className="violet"><Icon name="chart"/></i><span>View reports</span><Icon name="arrow"/></button></section><section className="home-growth"><span>Audience growth</span><strong>{dashboard?.audienceGrowth||0}</strong><small>Active this month</small></section></aside></div>{error&&<p className="report-error">{error}</p>}
+      <aside className="home-quick"><section><h2>Quick actions</h2><button onClick={()=>onNavigate('templates')}><i className="blue"><Icon name="file"/></i><span>Browse templates</span><Icon name="arrow"/></button><button onClick={()=>onNavigate('leads')}><i className="blue"><Icon name="bookmark"/></i><span>Manage leads</span><Icon name="arrow"/></button><button onClick={onInvite}><i className="green"><Icon name="users"/></i><span>Invite audience</span><Icon name="arrow"/></button><button onClick={()=>onNavigate('reports')}><i className="violet"><Icon name="chart"/></i><span>View reports</span><Icon name="arrow"/></button></section><section className="home-growth"><span>Audience growth</span><strong>{dashboard?.audienceGrowth||0}</strong><small>Active this month</small></section></aside></div>{error&&<p className="report-error">{error}</p>}
   </main></div>;
 }
 
@@ -381,6 +399,144 @@ function ReportsApp({user,onLogout,onJoin,onNavigate,onOpenWorkshop}){
 
 const initials=name=>String(name||'').split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase();
 const relativeDate=value=>{if(!value)return'Never';const days=Math.max(0,Math.round((Date.now()-new Date(value).getTime())/86400000));return days===0?'Today':days===1?'Yesterday':`${days} days ago`};
+const whatsappPhoneForExport=value=>{const cleaned=String(value||'').replace(/[^\d]/g,'');return cleaned.length>=8?cleaned:''};
+
+function LeadsApp({user,onLogout,onJoin,onNavigate}){
+  const [query,setQuery]=useState(''),[status,setStatus]=useState('all'),[source,setSource]=useState('all'),[assignee,setAssignee]=useState('all'),[workshopId,setWorkshopId]=useState('all'),[selectedLeadId,setSelectedLeadId]=useState(''),[leadsPayload,setLeadsPayload]=useState(null),[loading,setLoading]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[members,setMembers]=useState([]),[workshops,setWorkshops]=useState([]),[drawer,setDrawer]=useState(false),[autoAssign,setAutoAssign]=useState(false),[newLead,setNewLead]=useState({name:'',email:'',phone:'',source:'instagram',status:'new',assignedTo:'',workshopId:'',notes:''}),[saving,setSaving]=useState(false),[detail,setDetail]=useState(null),[editor,setEditor]=useState(null),[savingDetail,setSavingDetail]=useState(false),[contact,setContact]=useState(''),[contactMethod,setContactMethod]=useState('call'),[logBusy,setLogBusy]=useState(false),[historyWorkshop,setHistoryWorkshop]=useState(''),[historyEvent,setHistoryEvent]=useState('invited');
+  const leaders=useMemo(()=>members.map(member=>({id:member.id,name:member.name,email:member.email,status:member.status})).filter(member=>member.status==='active'),[members]);
+  const leadSummary=leadsPayload?.summary||{totalLeads:0,newLeads:0,contactedLeads:0,interestedLeads:0,registeredLeads:0,noShowLeads:0,droppedLeads:0};
+  const leads=leadsPayload?.leads||[];
+  const selectedLead=leads.find(lead=>lead.id===selectedLeadId)||null;
+  const kpis=[
+    ['Lead count',leadSummary.totalLeads,`All ${leadSummary.totalLeads} records`,'chart'],
+    ['Active leads',leadSummary.interestedLeads+leadSummary.contactedLeads,`Contact in progress`,`users`],
+    ['Registered',leadSummary.registeredLeads,`Workshops conversion`,`heart`],
+    ['Unassigned',leads.filter(lead=>!lead.assignedTo).length,`Potential leads to route`,`users`],
+  ];
+
+  const queryPayload=()=>{
+    const params=new URLSearchParams();
+    if(query.trim())params.set('q',query.trim());
+    if(status!=='all')params.set('status',status);
+    if(source!=='all')params.set('source',source);
+    if(assignee!=='all')params.set('assignee',assignee);
+    if(workshopId!=='all')params.set('workshopId',workshopId);
+    return params.toString() ? `?${params}` : '';
+  };
+
+  const loadContext=async()=>{
+    try{
+      const [workspaceResult,workshopResult]=await Promise.all([
+        api('/api/organization',{auth:true}),
+        api('/api/workshops',{auth:true}),
+      ]);
+      setMembers((workspaceResult.workspace?.members||[]));
+      setWorkshops(workshopResult.workshops||[]);
+    }catch(err){setError(err.message);}
+  };
+
+  const loadLeads=async()=>{
+    setLoading(true);setError('');
+    try{const result=await api(`/api/leads${queryPayload()}`,{auth:true});setLeadsPayload(result.leads);}catch(err){setError(err.message);}finally{setLoading(false)}
+  };
+
+  const loadLeadDetail=async leadId=>{
+    if(!leadId){setDetail(null);return;}
+    try{const result=await api(`/api/leads/${leadId}/workshop-history`,{auth:true});setDetail(result);}catch(err){setError(err.message);} 
+  };
+
+  useEffect(()=>{loadContext()},[]);
+  useEffect(()=>{loadLeads();},[query,status,source,assignee,workshopId]);
+  useEffect(()=>{if(selectedLeadId)loadLeadDetail(selectedLeadId);},[selectedLeadId]);
+  useEffect(()=>{if(!selectedLeadId && leads.length)setSelectedLeadId(leads[0].id);},[leads.length]);
+  useEffect(()=>{if(!selectedLead){setEditor(null);return;}setEditor({...selectedLead,assignedTo:selectedLead.assignedTo||''});},[selectedLead?.id]);
+
+  const resetNewLead=()=>{setNewLead({name:'',email:'',phone:'',source:'instagram',status:'new',assignedTo:'',workshopId:'',notes:''});setDrawer(false);};
+  const assignRoundRobin=()=>{
+    if(!leaders.length)return '';
+    const index=Math.max(0, leadsPayload?.summary?.totalLeads||0)%leaders.length;
+    return leaders[index]?.id||'';
+  };
+
+  const createLead=async()=>{
+    if(!newLead.name.trim()&&!newLead.email.trim()&&!newLead.phone.trim())return setError('Name, email, or phone is required');
+    setSaving(true);setError('');
+    const body={...newLead,assignedTo:autoAssign?assignRoundRobin():newLead.assignedTo||null,workshopId:newLead.workshopId||undefined};
+    try{const result=await api('/api/leads',{method:'POST',auth:true,body});if(!result?.lead)throw new Error('Lead not saved');setNotice('Lead created');setNewLead({...newLead,notes:'',assignedTo:'',workshopId:'',source:'instagram'});setDrawer(false);await loadLeads();setSelectedLeadId(result.lead.id);}catch(err){setError(err.message);}finally{setSaving(false)}
+  };
+
+  const updateLead=async()=>{
+    if(!selectedLead||!editor)return;
+    setSavingDetail(true);setError('');
+    try{await api(`/api/leads/${selectedLead.id}`,{method:'PATCH',auth:true,body:{...editor,assignedTo:editor.assignedTo||null}});await loadLeads();await loadLeadDetail(selectedLead.id);setNotice('Lead updated');}catch(err){setError(err.message);}finally{setSavingDetail(false)};
+  };
+
+  const assignLead=async leadId=>{
+    if(!leadId||!leaders.length)return;
+    const target=assignRoundRobin();
+    if(!target)return;
+    await api(`/api/leads/${leadId}/assign`,{method:'POST',auth:true,body:{assignedTo:target}}).catch(err=>setError(err.message));
+    await Promise.all([loadLeads(),selectedLeadId===leadId&&loadLeadDetail(leadId)]);
+  };
+
+  const addContactLog=async()=>{
+    if(!selectedLead||!contact.trim())return;
+    setLogBusy(true);setError('');
+    try{await api(`/api/leads/${selectedLead.id}/contact-log`,{method:'POST',auth:true,body:{method:contactMethod,note:contact}});setContact('');setContactMethod('call');await loadLeadDetail(selectedLead.id);}catch(err){setError(err.message)}finally{setLogBusy(false)};
+  };
+
+  const trackWorkshop=async(event,historyWorkshopId=historyWorkshop,eventType=historyEvent)=>{
+    if(!selectedLead||!historyWorkshopId||!eventType)return;
+    try{await api(`/api/leads/${selectedLead.id}/track`,{method:'POST',auth:true,body:{workshopId:historyWorkshopId,event:eventType}});await loadLeadDetail(selectedLead.id);setNotice('Workshop status updated');}catch(err){setError(err.message)};
+  };
+
+  const exportCsv=()=>{
+    const rows=[['Name','Email','Phone','Source','Status','Assignee','Workshop count','Contact count','Updated at'],...leads.map(lead=>[lead.name||'',lead.email||'',lead.phone||'',lead.source||'',lead.status||'',lead.assigneeName||'',lead.workshopCount||0,lead.contactCount||0,lead.updatedAt||''])];
+    const csv=rows.map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;link.download=`cfl-leads-${new Date().toISOString().slice(0,10)}.csv`;
+    link.click();URL.revokeObjectURL(url);
+  };
+  const copyWhatsappTargets=async()=>{
+    const selectedPhones=leads
+      .filter(lead=>lead.status!=='registered'&&lead.phone)
+      .map(lead=>whatsappPhoneForExport(lead.phone))
+      .filter(Boolean);
+    const uniquePhones=[...new Set(selectedPhones)];
+    if(!uniquePhones.length){setNotice('No non-registered leads with valid phone numbers.');return;}
+    try{
+      await navigator.clipboard.writeText(uniquePhones.join('\n'));
+      setNotice(`Copied ${uniquePhones.length} WhatsApp numbers`);
+    }catch(err){
+      setError('Unable to copy WhatsApp numbers. Try again in browser permissions.');
+    }
+  };
+
+  const workshopOptions=workshops.map(workshop=>[workshop.id,workshop.title]);
+  const contactLogs=detail?.contactLogs||[];
+  const history=detail?.workshopHistory||[];
+
+  return <div className="leads-shell"><SideNav active="leads" onOpenParticipant={onJoin} onNavigate={onNavigate}/><main className="leads-main">
+    <header className="leads-top"><h1>Leads</h1><div><button onClick={()=>setDrawer((value)=>!value)}><Icon name="plus"/> New lead</button><button onClick={exportCsv}><Icon name="download"/> Export CSV</button><button onClick={copyWhatsappTargets}><Icon name="copy"/> Copy WhatsApp targets</button><button className="avatar" onClick={onLogout}>{initials(user?.name)||'YP'}</button></div></header>
+    <section className="leads-kpis">{kpis.map(([label,value,help,icon])=><article key={label}><i className={`leads-kpi-icon`}><Icon name={icon} size={18}/></i><span>{label}</span><strong>{value}</strong><small>{help}</small></article>)}</section>
+    <div className="leads-grid"><section className="leads-list-panel"><header className="leads-filterbar"><h2>Lead pipeline</h2><label><Icon name="search"/> <input aria-label="Search leads" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search name, email, phone, note"/></label><label><Icon name="users"/><select aria-label="Lead status" value={status} onChange={event=>setStatus(event.target.value)}>{['all',...leadStatusChoices].map(value=><option key={value} value={value}>{value==='all'?'All status':leadStatusLabel(value)})</option>)}</select></label><label><Icon name="chart"/><select aria-label="Lead source" value={source} onChange={event=>setSource(event.target.value)}>{['all',...leadSourceChoices].map(value=><option key={value} value={value}>{value==='all'?'All source':leadSourceLabel(value)}</option>)}</select></label><label><Icon name="users"/><select aria-label="Lead assignee" value={assignee} onChange={event=>setAssignee(event.target.value)}><option value="all">All assignee</option>{leaders.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label><label><Icon name="file"/><select aria-label="Workshop filter" value={workshopId} onChange={event=>setWorkshopId(event.target.value)}><option value="all">All workshops</option>{workshopOptions.map(([id,title])=><option key={id} value={id}>{title}</option>)}</select></label></header>
+      {loading?<div className="report-empty">Loading leads…</div>:<div className="lead-rows"><div className="lead-rows-head"><span>Lead</span><span>Source</span><span>Status</span><span>Assignee</span><span>Workshops</span><span>Contacts</span><span>Last update</span><span/></div>{leads.map((lead,index)=><article key={lead.id} className={`lead-row ${selectedLeadId===lead.id?'selected':''}`} onClick={()=>setSelectedLeadId(lead.id)}><span><i className={`lead-avatar ${index%5}`}>{initials(lead.name)}</i><span><strong>{lead.name||'Unnamed lead'}</strong><small>{lead.email||lead.phone||'No contact detail'}</small></span></span><small>{leadSourceLabel(lead.source)}</small><span><b className={`lead-status ${lead.status}`}>{leadStatusLabel(lead.status)}</b></span><span>{lead.assigneeName||'Unassigned'}</span><b>{lead.workshopCount||0}</b><b>{lead.contactCount||0}</b><small>{relativeDate(lead.updatedAt)}</small><span>{lead.assignedTo?'':<button type="button" onClick={event=>{event.stopPropagation();assignLead(lead.id)}}>Auto assign</button>}</span></article>)}{!leads.length&&<div className="lead-empty">No leads match filters.</div>}</div>}
+    </section>
+    <aside className="leads-detail">
+      {!selectedLead?<div className="leads-empty">Select a lead to view details.</div>:<>
+        <section className="leads-detail-card"><h2>Lead profile</h2>
+          {editor&&<><label>Name<input value={editor.name||''} onChange={event=>setEditor({...editor,name:event.target.value})}/><label>Email<input value={editor.email||''} onChange={event=>setEditor({...editor,email:event.target.value})}/><label>Phone<input value={editor.phone||''} onChange={event=>setEditor({...editor,phone:event.target.value})}/><label>Source<select value={editor.source||'offline_form'} onChange={event=>setEditor({...editor,source:event.target.value})}>{leadSourceChoices.map(value=><option key={value} value={value}>{leadSourceLabel(value)}</option>)}</select></label><label>Status<select value={editor.status||'new'} onChange={event=>setEditor({...editor,status:event.target.value})}>{leadStatusChoices.map(value=><option key={value} value={value}>{leadStatusLabel(value)}</option>)}</select></label><label>Assignee<select value={editor.assignedTo||''} onChange={event=>setEditor({...editor,assignedTo:event.target.value})}><option value="">Unassigned</option>{leaders.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label><label>Notes<textarea value={editor.notes||''} onChange={event=>setEditor({...editor,notes:event.target.value})} maxLength={2000}/></label><div className="leads-detail-actions"><button onClick={updateLead} disabled={savingDetail}>{savingDetail?'Saving…':'Save changes'}</button><button onClick={()=>assignLead(selectedLead.id)}>Auto assign teammate</button></div></>)}</section>
+        <section className="lead-workshop-panel"><h3>Workshop history</h3><div className="lead-track-form"><select value={historyWorkshop} onChange={event=>setHistoryWorkshop(event.target.value)}><option value="">Pick workshop</option>{workshopOptions.map(([id,title])=><option key={id} value={id}>{title}</option>)}</select><select value={historyEvent} onChange={event=>setHistoryEvent(event.target.value)}>{leadWorkshopStates.map(value=><option key={value} value={value}>{value}</option>)}</select><button onClick={()=>trackWorkshop(selectedLead.id,historyWorkshop,historyEvent)}>Track</button></div>{history.length?history.map(item=><article key={item.id}><span><strong>{item.workshopTitle}</strong><small>{item.workshopJoinCode}</small></span><span className={`lead-status ${item.status}`}>{item.status}</span><button onClick={()=>trackWorkshop(selectedLead.id,item.workshopId,item.status==='invited'?'joined':'registered')}>{item.status==='invited'?'Mark joined':'Mark registered'}</button></article>):<p className="leads-empty">No workshop links yet.</p>}</section>
+        <section className="lead-contact-panel"><h3>Contact log</h3><div className="lead-contact-form"><select value={contactMethod} onChange={event=>setContactMethod(event.target.value)}>{leadContactMethods.map(method=><option key={method} value={method}>{leadMethodLabel(method)}</option>)}</select><textarea value={contact} onChange={event=>setContact(event.target.value)} maxLength={1200} placeholder="Add WhatsApp/call follow-up notes"/></div><button className="lead-contact-save" onClick={addContactLog} disabled={logBusy||!contact.trim()}>{logBusy?'Saving…':'Add contact log'}</button>{contactLogs.length?<div className="lead-contacts">{contactLogs.map(item=><article key={item.id}><span><strong>{item.actorName||'System'}</strong><small>{new Date(item.createdAt).toLocaleString()}</small></span><small className="lead-contact-method">{leadMethodLabel(item.method)}</small><p>{item.notes}</p></article>)}</div>:<p className="leads-empty">No contact log yet.</p>}</section>
+      </>}
+      {notice&&<div className="lead-notice" onClick={()=>setNotice('')}>{notice}</div>}
+    </aside></div>
+    {drawer&&<aside className="leads-drawer"><header><h2>New lead</h2><button onClick={resetNewLead}>×</button></header><label>Name<input value={newLead.name} onChange={event=>setNewLead({...newLead,name:event.target.value})} placeholder="Lead name"/><label>Email<input value={newLead.email} onChange={event=>setNewLead({...newLead,email:event.target.value})} placeholder="Email address"/><label>Phone<input value={newLead.phone} onChange={event=>setNewLead({...newLead,phone:event.target.value})} placeholder="Phone number"/></label><label>Source<select value={newLead.source} onChange={event=>setNewLead({...newLead,source:event.target.value})}>{leadSourceChoices.map(value=><option key={value} value={value}>{leadSourceLabel(value)}</option>)}</select></label><label>Status<select value={newLead.status} onChange={event=>setNewLead({...newLead,status:event.target.value})}>{leadStatusChoices.map(value=><option key={value} value={value}>{leadStatusLabel(value)}</option>)}</select></label><label>Workshop<select value={newLead.workshopId||''} onChange={event=>setNewLead({...newLead,workshopId:event.target.value})}><option value="">No workshop link</option>{workshopOptions.map(([id,title])=><option key={id} value={id}>{title}</option>)}</select></label><label>Assign teammate<select value={newLead.assignedTo||''} onChange={event=>setNewLead({...newLead,assignedTo:event.target.value})}><option value="">Unassigned</option>{leaders.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label><label><input type="checkbox" checked={autoAssign} onChange={()=>setAutoAssign(value=>!value)}/> Auto assign next teammate</label><label>Notes<textarea value={newLead.notes} onChange={event=>setNewLead({...newLead,notes:event.target.value})} maxLength={1200}/></label><div className="leads-drawer-actions"><button onClick={createLead} disabled={saving}>{saving?'Creating…':'Create lead'}</button><button onClick={resetNewLead}>Cancel</button></div></aside>}
+    {error&&<p className="report-error">{error}</p>}
+  </main></div>;
+}
 
 function AudienceApp({user,onLogout,onJoin,onNavigate,openInvite=false,onInviteHandled=()=>{}}){
   const [audience,setAudience]=useState(null),[query,setQuery]=useState(''),[status,setStatus]=useState('all'),[groupId,setGroupId]=useState('all'),[drawer,setDrawer]=useState(new URLSearchParams(location.search).get('drawer')==='1'||openInvite),[mode,setMode]=useState('invite'),[emails,setEmails]=useState(''),[inviteGroup,setInviteGroup]=useState(''),[names,setNames]=useState({}),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('');
@@ -497,7 +653,7 @@ function LoginApp({onLogin,onJoin}){
 }
 
 function App(){
-  const allowedViews=['home','workshops','templates','reports','team','workspace','join','presenter','projector'];
+  const allowedViews=['home','workshops','templates','reports','team','workspace','leads','join','presenter','projector'];
   const readLocation=()=>{const params=new URLSearchParams(location.search),join=params.get('join'),requested=params.get('view');return{view:join?'join':allowedViews.includes(requested)?requested:'home',code:String(join||params.get('code')||'').toUpperCase().slice(0,6),workshop:params.get('workshop')||''}};
   const initial=readLocation();
   const [view,setView]=useState(initial.view),[user,setUser]=useState(undefined),[activeCode,setActiveCode]=useState(initial.code||'27RJ27'),[activeWorkshop,setActiveWorkshop]=useState(initial.workshop||'healthy-forever'),[editWorkshopId,setEditWorkshopId]=useState(null),[teamDrawer,setTeamDrawer]=useState(false);
@@ -510,9 +666,10 @@ function App(){
   if(user===undefined)return <div className="app-loading"><Logo compact/><span>Loading secure workspace…</span></div>;
   if(!user)return <LoginApp onLogin={setUser} onJoin={()=>go('join')}/>;
   if(view==='projector')return <Projector joinCode={activeCode} onBack={()=>go('presenter',{code:activeCode,workshop:activeWorkshop})}/>;
-  const navigate=next=>['home','workshops','templates','reports','team','workspace'].includes(next)&&go(next);
+  const navigate=next=>['home','workshops','templates','reports','team','workspace','leads'].includes(next)&&go(next);
   if(view==='presenter')return <PresenterApp user={user} joinCode={activeCode} onLogout={logout} onJoin={()=>go('join',{code:activeCode})} onProjector={()=>go('projector',{code:activeCode,workshop:activeWorkshop})} onBack={()=>go('workshops')} onNavigate={navigate} onEdit={()=>{setEditWorkshopId(activeWorkshop);go('workshops')}}/>;
   if(view==='reports')return <ReportsApp user={user} onLogout={logout} onJoin={()=>go('join')} onNavigate={navigate} onOpenWorkshop={(code,id)=>go('presenter',{code,workshop:id})}/>;
+  if(view==='leads')return <LeadsApp user={user} onLogout={logout} onJoin={()=>go('join')} onNavigate={navigate}/>;
   if(view==='team')return <AudienceApp user={user} onLogout={logout} onJoin={()=>go('join')} onNavigate={navigate} openInvite={teamDrawer} onInviteHandled={()=>setTeamDrawer(false)}/>;
   if(view==='workspace')return <WorkspaceApp user={user} onLogout={logout} onJoin={()=>go('join')} onNavigate={navigate}/>;
   if(view==='templates')return <TemplatesApp user={user} onLogout={logout} onJoin={()=>go('join')} onNavigate={navigate} onWorkshop={(workshop,edit)=>{setActiveCode(workshop.joinCode);setActiveWorkshop(workshop.id);if(edit)setEditWorkshopId(workshop.id);go('workshops')}}/>;

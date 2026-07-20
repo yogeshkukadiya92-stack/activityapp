@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { addAudiencePeople, addResponse, authenticateUser, closeStorage, controlSession, createAudienceGroup, createTemplate, createWorkshop, createWorkspaceMember, deleteActivity, deleteTemplate, deleteWorkspaceMember, deleteWorkshop, getAudience, getAuthUser, getJoinCodeForSession, getReportExportRows, getReports, getSession, getTemplate, getWorkspace, getWorkshop, joinSession, listTemplates, listWorkshops, moderateResponse, revokeAuthSession, saveActivity, storageDriver, storageHealth, tickLiveSessions, updateOrganization, updateWorkspaceMember, updateWorkshop, useTemplate, writeAudit } from './store.mjs';
+import { addAudiencePeople, addLeadContactLog, addResponse, assignLead, authenticateUser, closeStorage, controlSession, createAudienceGroup, createLead, createTemplate, createWorkshop, createWorkspaceMember, deleteActivity, deleteTemplate, deleteWorkspaceMember, deleteWorkshop, getAudience, getAuthUser, getLeadById, getLeadReports, getLeadWorkshopHistory, getLeads, getJoinCodeForSession, getReportExportRows, getReports, getSession, getTemplate, getWorkspace, getWorkshop, joinSession, listTemplates, listWorkshops, moderateResponse, revokeAuthSession, saveActivity, storageDriver, storageHealth, tickLiveSessions, trackLeadWorkshopEvent, updateLead, updateOrganization, updateWorkspaceMember, updateWorkshop, useTemplate, writeAudit } from './store.mjs';
 import { acquireTickLease, allowDistributedRequest, broadcastCluster, closeRealtime, initRealtime, realtimeHealth } from './realtime.mjs';
 import { runtimeInfo } from './config.mjs';
 
@@ -76,6 +77,10 @@ const server=http.createServer(async(req,res)=>{
       const user=await requirePresenter(req,res);if(!user)return;
       const report=await getReports(url.searchParams.get('workshopId'),url.searchParams.get('days'));return json(req,res,200,{report});
     }
+    if(url.pathname==='/api/reports/leads'&&req.method==='GET'){
+      const user=await requirePresenter(req,res);if(!user)return;
+      const reports=await getLeadReports();return json(req,res,200,{reports});
+    }
     if(url.pathname==='/api/reports/export'&&req.method==='GET'){
       const user=await requirePresenter(req,res);if(!user)return;
       const rows=await getReportExportRows(url.searchParams.get('workshopId'),url.searchParams.get('days'));
@@ -91,6 +96,66 @@ const server=http.createServer(async(req,res)=>{
     }
     if(url.pathname==='/api/audience/groups'&&req.method==='POST'){
       const user=await requirePresenter(req,res);if(!user)return;const body=await readBody(req);if(!body)return json(req,res,400,{error:'Invalid JSON'});const group=await createAudienceGroup(body);if(!group)return json(req,res,422,{error:'A unique group name is required'});await writeAudit(user.id,'audience.group.create','audience_group',group.id,{name:group.name});return json(req,res,201,{group});
+    }
+    if(url.pathname==='/api/leads'){
+      const user=await requirePresenter(req,res);if(!user)return;
+      if(req.method==='GET'){
+        const leads=await getLeads(url.searchParams.get('q'),url.searchParams.get('status'),url.searchParams.get('source'),url.searchParams.get('assignee'),url.searchParams.get('workshopId'));
+        return json(req,res,200,{leads});
+      }
+      if(req.method==='POST'){
+        const body=await readBody(req);if(!body)return json(req,res,400,{error:'Invalid or oversized JSON'});
+        const lead=await createLead(body);if(lead?.error){const messages={missing_identity:'Name, email, or phone is required',invalid_email:'Please provide a valid email',invalid_phone:'Please provide a valid phone number',duplicate_email:'This email already exists',duplicate_phone:'This phone number already exists',invalid_assignee:'Assigned teammate does not exist'};return json(req,res,422,{error:messages[lead.error]||'Lead could not be saved'})}
+        await writeAudit(user.id,'lead.create','lead',lead.id,{status:lead.status,source:lead.source,assignee:lead.assignedTo||null});
+        return json(req,res,201,{lead});
+      }
+    }
+    const leadMatch=url.pathname.match(/^\/api\/leads\/([a-f0-9-]+)\/(assign|contact-log|workshop-history|track)$/i);
+    if(leadMatch){
+      const user=await requirePresenter(req,res);if(!user)return;
+      const leadId=leadMatch[1],action=leadMatch[2].toLowerCase();
+      if(action==='assign'&&req.method==='POST'){
+        const body=await readBody(req);if(!body)return json(req,res,400,{error:'Invalid JSON'});
+        const lead=await assignLead(leadId,body.assignedTo||null,user.id);
+        if(lead?.error){
+          const status=lead.error==='not_found'?404:422;
+          const messages={not_found:'Lead not found',invalid_assignee:'Assigned teammate does not exist'};
+          return json(req,res,status,{error:messages[lead.error]||'Lead assignment failed'});
+        }
+        await writeAudit(user.id,'lead.assign','lead',lead.id,{assignee:body.assignedTo||null});
+        return json(req,res,200,{lead});
+      }
+      if(action==='contact-log'&&req.method==='POST'){
+        const body=await readBody(req);if(!body)return json(req,res,400,{error:'Invalid JSON'});
+        const log=await addLeadContactLog(leadId,body,user.id);
+        if(log?.error){const messages={not_found:'Lead not found',missing_note:'Add a note before saving contact log'};return json(req,res,422,{error:messages[log.error]||'Contact log could not be saved'})}
+        await writeAudit(user.id,'lead.contact','lead',leadId,{method:body.method||'other'});
+        return json(req,res,200,{log});
+      }
+      if(action==='workshop-history'&&req.method==='GET'){
+        const history=await getLeadWorkshopHistory(leadId);
+        if(history?.error)return json(req,res,404,{error:'Lead not found'});
+        return json(req,res,200,history);
+      }
+      if(action==='track'&&req.method==='POST'){
+        const body=await readBody(req);if(!body)return json(req,res,400,{error:'Invalid JSON'});
+        const history=await trackLeadWorkshopEvent(leadId,body.workshopId,body.event);
+        if(history?.error){const messages={not_found:'Lead not found',invalid_workshop:'Workshop not found',invalid_status:'Invalid workshop event'};return json(req,res,422,{error:messages[history.error]||'Workshop tracking failed'})}
+        return json(req,res,200,history);
+      }
+    }
+    const leadIdMatch=url.pathname.match(/^\/api\/leads\/([a-f0-9-]+)$/i);
+    if(leadIdMatch){
+      const user=await requirePresenter(req,res);if(!user)return;
+      const leadId=leadIdMatch[1];
+      if(req.method==='PATCH'){
+        const body=await readBody(req);if(!body)return json(req,res,400,{error:'Invalid JSON'});
+        const lead=await updateLead(leadId,body);
+        if(lead?.error){const messages={not_found:'Lead not found',invalid_email:'Please provide a valid email',invalid_phone:'Please provide a valid phone',invalid_assignee:'Assignee does not exist'};return json(req,res,422,{error:messages[lead.error]||'Lead update failed'})}
+        await writeAudit(user.id,'lead.update','lead',lead.id,{status:lead.status,source:lead.source,assignee:lead.assignedTo||null});
+        return json(req,res,200,{lead});
+      }
+      if(req.method==='GET'){const lead=await getLeadById(leadId);if(!lead)return json(req,res,404,{error:'Lead not found'});return json(req,res,200,{lead});}
     }
     if(url.pathname==='/api/templates'){
       const user=await requirePresenter(req,res);if(!user)return;
